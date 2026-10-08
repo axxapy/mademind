@@ -1,0 +1,57 @@
+# Checks for pull requests and master: formatting, lints and tests for both
+# builds (with and without the builtin engine), plus the clients and scripts.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: rust (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # builtin engine (compiles llama.cpp)
+          - { name: default, flags: "" }
+          # external engine only
+          - { name: external-only, flags: --no-default-features }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets ${{ matrix.flags }} -- -D warnings
+      - run: cargo test --locked ${{ matrix.flags }}
+
+  clients:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      # The pi extension imports pi's own packages (provided by pi at load
+      # time), so only the standalone clients are bundled here.
+      - name: Check clients compile
+        run: |
+          for f in clients/mademind-auth.ts clients/mcp-stdio-proxy.ts; do
+            bun build --target=bun "$f" --outfile /dev/null
+          done
+      - name: shellcheck
+        run: shellcheck scripts/*.sh

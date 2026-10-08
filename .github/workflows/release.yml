@@ -1,0 +1,235 @@
+# Release: push a tag vX.Y.Z (matching Cargo.toml's version) to
+#   - build every platform on its own runner and publish a GitHub Release with
+#     the archives and SHA256SUMS (no Windows arm64 build yet: llama.cpp needs
+#     clang there; Windows on ARM runs the x86_64 build under emulation);
+#   - build the container images (native runners) and push them to Docker Hub
+#     as <DOCKERHUB_USERNAME>/mademind:
+#       X.Y.Z, X.Y, latest                  (Dockerfile: builtin engine; amd64 + arm64)
+#       X.Y.Z-classic, X.Y-classic, classic (Dockerfile.classic: Bun qmd; amd64
+#                                            only: its better-sqlite3 dependency
+#                                            doesn't build on arm64 under Bun)
+# "Run workflow" (workflow_dispatch) builds everything as a dry run, without
+# publishing or pushing.
+#
+# Docker Hub auth: repository variable DOCKERHUB_USERNAME and secret
+# DOCKERHUB_TOKEN (a Docker Hub personal access token with Read & Write).
+name: release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # glibc: in the Debian bookworm container (scripts/dist-glibc.Dockerfile)
+          - { name: linux-x86_64-gnu, os: ubuntu-24.04 }
+          - { name: linux-arm64-gnu, os: ubuntu-24.04 }
+          # musl (static): cross-built with zig
+          - { name: linux-x86_64-musl, os: ubuntu-24.04, zig: true }
+          - { name: linux-arm64-musl, os: ubuntu-24.04, zig: true }
+          # native toolchains (macOS SDK; MSVC with its own OpenMP)
+          - { name: macos-x86_64, os: macos-15-intel, native: true }
+          - { name: macos-arm64, os: macos-15, native: true }
+          - { name: windows-x86_64, os: windows-2025, native: true }
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check tag matches Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          if [[ "${GITHUB_REF_NAME}" != "v${version}" ]]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match Cargo.toml version ${version}"
+            exit 1
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: matrix.native || matrix.zig
+
+      - uses: mlugg/setup-zig@v2
+        if: matrix.zig
+        with:
+          version: 0.16.0
+
+      - uses: taiki-e/install-action@v2
+        if: matrix.zig
+        with:
+          tool: cargo-zigbuild
+
+      - name: Build and package
+        shell: bash
+        env:
+          TARGETS: ${{ matrix.name }}
+          BUILD: ${{ matrix.native && 'native' || '' }}
+        run: scripts/dist.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+
+  release:
+    # Waits for the images too, so the notes never list tags that weren't pushed.
+    needs: [build, image-manifest]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      # Only the archives: an unfiltered download also pulls the image jobs'
+      # digests and build records, which fail to download.
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist
+          pattern: dist-*
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum mademind-* > SHA256SUMS && cat SHA256SUMS
+
+      - name: Install notes
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          img="${{ vars.DOCKERHUB_USERNAME }}/mademind"
+          cat > notes.md <<EOF
+          ## Install
+
+          **Docker** (linux/amd64, linux/arm64):
+
+          \`\`\`sh
+          docker pull ${img}:${v}
+          \`\`\`
+
+          Original qmd engine (linux/amd64): \`${img}:${v}-classic\`. Setup: see the [README](https://github.com/${GITHUB_REPOSITORY}#quick-start).
+
+          **Binaries**: pick the archive for your platform below and check it against \`SHA256SUMS\`. Windows on ARM: use \`windows-x86_64\` (runs under emulation).
+          EOF
+          cat notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "mademind ${GITHUB_REF_NAME}" \
+            --notes-file notes.md \
+            --generate-notes \
+            --verify-tag
+
+  image:
+    name: image ${{ matrix.variant }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [slim, classic]
+        arch: [amd64, arm64]
+        exclude:
+          - { variant: classic, arch: arm64 }
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+          - { variant: slim, dockerfile: Dockerfile }
+          - { variant: classic, dockerfile: Dockerfile.classic }
+    env:
+      IMAGE: docker.io/${{ vars.DOCKERHUB_USERNAME }}/mademind
+      PUSH: ${{ startsWith(github.ref, 'refs/tags/') }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: env.PUSH == 'true'
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+      # Pushed by digest only; the image-manifest job tags the multi-arch list.
+      - id: build
+        uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: ${{ env.PUSH == 'true' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE) || 'type=cacheonly' }}
+          cache-from: type=gha,scope=${{ matrix.variant }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}-${{ matrix.arch }}
+      - name: Save digest
+        if: env.PUSH == 'true'
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+      - uses: actions/upload-artifact@v4
+        if: env.PUSH == 'true'
+        with:
+          name: digest-${{ matrix.variant }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+
+  image-manifest:
+    name: image ${{ matrix.variant }} (multi-arch tags)
+    needs: image
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - { variant: slim, suffix: "", latest: "true" }
+          - { variant: classic, suffix: "-classic", latest: "false" }
+    env:
+      IMAGE: docker.io/${{ vars.DOCKERHUB_USERNAME }}/mademind
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: /tmp/digests
+          pattern: digest-${{ matrix.variant }}-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: |
+            latest=false
+            suffix=${{ matrix.suffix }},onlatest=true
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ matrix.latest }}
+            type=raw,value=classic,suffix=,enable=${{ matrix.variant == 'classic' }}
+      - name: Create multi-arch tags
+        working-directory: /tmp/digests
+        run: |
+          args=()
+          while read -r tag; do args+=(-t "$tag"); done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          for digest in *; do args+=("${IMAGE}@sha256:${digest}"); done
+          docker buildx imagetools create "${args[@]}"
+      - name: Inspect
+        run: docker buildx imagetools inspect "${IMAGE}:${{ steps.meta.outputs.version }}"
