@@ -1,0 +1,50 @@
+# mademind: one container, one exposed port.
+#
+#   docker compose up -d                     # axxapy/mademind: builtin engine (rqmd in-process)
+#   docker compose up -d mademind-classic    # axxapy/mademind:classic: external Bun qmd engine
+#
+# Images come from Docker Hub; to run your own build instead:
+#   docker build -t axxapy/mademind:latest .
+#
+# Run one of the two: both bind the same port. Everything is configured in
+# ./config.toml (cp config.example.toml config.toml); notes are mounted from
+# $NOTES_DIR (default ./notes) at /data/notes, the example collection's path.
+#
+# network_mode: host — mademind binds 0.0.0.0:$PORT on the host directly (no
+# docker-proxy NAT), so processes on this machine arrive as 127.0.0.1 and
+# match the open loopback auth rule; everyone else must sign requests.
+
+name: mademind
+
+x-common: &common
+  environment:
+    - PORT=8888
+  network_mode: host
+  restart: unless-stopped
+
+services:
+  mademind:
+    <<: *common
+    image: axxapy/mademind:latest
+    container_name: mademind
+    volumes:
+      - ./config.toml:/config/config.toml:ro
+      # Notes are read-only: the container never writes them.
+      - ${NOTES_DIR:-./notes}:/data/notes:ro
+      # Index + GGUF models; survives image rebuilds.
+      - mademind-cache:/root/.cache/mademind
+
+  mademind-classic:
+    <<: *common
+    profiles: ["classic"]
+    image: axxapy/mademind:classic
+    container_name: mademind-classic
+    volumes:
+      - ./config.toml:/config/config.toml:ro
+      - ${NOTES_DIR:-./notes}:/data/notes:ro
+      # Separate index from the builtin engine: switching is a cold start.
+      - qmd-cache:/root/.cache/qmd
+
+volumes:
+  qmd-cache:
+  mademind-cache:

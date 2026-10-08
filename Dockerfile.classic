@@ -1,0 +1,89 @@
+# syntax=docker/dockerfile:1
+#
+# Classic image: mademind + the original qmd engine (@tobilu/qmd on Bun),
+# run as [engine] kind = "external". mademind is built without the builtin
+# engine (no llama.cpp compile, smaller binary).
+#
+#   stage qmd     : Bun + @tobilu/qmd (pinned, patched, CPU-only llama prebuilds)
+#   stage manager : rust:slim-trixie, cargo build of mademind (external only)
+#   final         : oven/bun runtime + the pruned qmd install + mademind
+#
+# mademind is the only entry point: it spawns `qmd mcp --http` on
+# loopback itself, so the engine never listens on a network interface.
+#
+# Build: docker build -f Dockerfile.classic -t mademind:classic .
+# Pins are deliberate; bump QMD_VERSION, re-check the patch below, rebuild.
+
+# ---------------------------------------------------------------------------
+# stage qmd: install the runtime pieces (build toolchain stays here)
+# ---------------------------------------------------------------------------
+FROM oven/bun:1.4.2-slim AS qmd
+
+# better-sqlite3 has no prebuild and compiles via node-gyp.
+RUN apt-get update -qq \
+ && apt-get install -y -qq python3 make g++ \
+ && rm -rf /var/lib/apt/lists/*
+
+# Bun 1.4 blocks dependency lifecycle scripts by default; trust the ones qmd
+# needs (native postinstalls) and reinstall so bins link.
+#
+# node-llama-cpp ships prebuilt llama.cpp for several platforms; keep only the
+# CPU build for the image's architecture unless GPU is wanted
+# (--build-arg PRUNE_LLAMA_PREBUILTS=0). The test fails the build if it's missing.
+# The Bun install cache and node-gyp cache are throwaway; drop them.
+ARG QMD_VERSION=2.8.3
+ARG PRUNE_LLAMA_PREBUILTS=1
+ARG TARGETARCH
+RUN bun install -g @tobilu/qmd@${QMD_VERSION} \
+ && bun pm -g trust node-llama-cpp tree-sitter-go tree-sitter-python tree-sitter-rust tree-sitter-javascript \
+ && bun install -g @tobilu/qmd@${QMD_VERSION} \
+ && if [ "$PRUNE_LLAMA_PREBUILTS" = "1" ]; then \
+      keep="linux-x64"; [ "$TARGETARCH" = "arm64" ] && keep="linux-arm64"; \
+      for d in /root/.bun/install/global/node_modules/@node-llama-cpp/*/; do \
+        [ "$(basename "$d")" = "$keep" ] || rm -rf "$d"; \
+      done; \
+      test -d "/root/.bun/install/global/node_modules/@node-llama-cpp/$keep"; \
+    fi \
+ && rm -rf /root/.bun/install/cache /root/.cache/node-gyp
+
+# Patch (qmd 2.8.3): disable the 5-min idle model dispose. On CPU a cold
+# reload takes ~4 min; keeping models resident in RAM (~3-4GB) is cheaper
+# than the wait. inactivityTimeoutMs=0 disables the unload (code checks
+# `> 0`). The grep fails the build if the pattern moved after a version bump.
+RUN sed -i 's/inactivityTimeoutMs: 5 \* 60 \* 1000,/inactivityTimeoutMs: 0, \/\/* keep models resident (patched) *\//' \
+    /root/.bun/install/global/node_modules/@tobilu/qmd/dist/index.js \
+ && grep -n 'inactivityTimeoutMs: 0' /root/.bun/install/global/node_modules/@tobilu/qmd/dist/index.js
+
+# ---------------------------------------------------------------------------
+# stage manager
+# ---------------------------------------------------------------------------
+# Pinned to trixie: matches the slim image's builder (rust:slim floats).
+FROM rust:slim-trixie AS manager
+WORKDIR /build
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+RUN cargo build --release --locked --no-default-features
+
+# ---------------------------------------------------------------------------
+# final
+# ---------------------------------------------------------------------------
+FROM oven/bun:1.4.2-slim
+
+COPY --from=qmd /root/.bun /root/.bun
+COPY --from=manager /build/target/release/mademind /usr/local/bin/mademind
+# qmd's global bin is a launcher that resolves the package via realpath, so it
+# must be a symlink into /root/.bun (Docker COPY dereferences file symlinks).
+RUN apt-get update -qq && apt-get install -y -qq libgomp1 && rm -rf /var/lib/apt/lists/* \
+ && ln -sf /root/.bun/install/global/node_modules/@tobilu/qmd/bin/qmd /usr/local/bin/qmd \
+ && qmd --version
+
+ENV NODE_ENV=production
+ENV MADEMIND_ENGINE=external
+# Models download on first use into the cache volume (~1.7GB).
+VOLUME ["/root/.cache/qmd"]
+WORKDIR /root
+EXPOSE 8888
+# Config: /config/config.toml (see config.example.toml / config.reference.toml); mademind writes
+# qmd's index.yml from it.
+HEALTHCHECK --interval=60s --timeout=10s CMD ["mademind", "healthcheck"]
+CMD ["mademind"]

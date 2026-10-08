@@ -1,0 +1,6 @@
+target/
+.git/
+notes/
+.cache/
+config.toml
+dist/
