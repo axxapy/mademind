@@ -1,0 +1,124 @@
+# mademind configuration reference: every key, with its default. Start from
+# config.example.toml instead; copy keys from here only when you need them.
+#
+# mademind reads /config/config.toml (or $MADEMIND_CONFIG). Apart from the
+# [collections.notes] example and the [auth] rules, every value below is the
+# built-in default (Config::default in src/config.rs; a test keeps the two in
+# sync), so any key can be left out. Unknown keys are rejected.
+#
+# Env overrides (win over the file): MADEMIND_ENGINE, MADEMIND_CACHE_DIR,
+# MADEMIND_DB, MADEMIND_THREADS, MADEMIND_QMD_BIN, MADEMIND_UPSTREAM, PORT,
+# MADEMIND_RESCAN_INTERVAL_MIN, MADEMIND_EMBED_INTERVAL_MIN,
+# MADEMIND_EMBED_BOOT_DELAY_SEC, MADEMIND_AUTH_TOLERANCE_SEC;
+# MADEMIND_CONFIG picks the file. Builtin-engine
+# tuning (rarely needed): MADEMIND_EMBED_MODEL, MADEMIND_RERANK_MODEL,
+# MADEMIND_GENERATE_MODEL, MADEMIND_EMBED_PARALLELISM,
+# MADEMIND_RERANK_PARALLELISM, MADEMIND_{EMBED,RERANK,EXPAND}_CONTEXT_SIZE,
+# MADEMIND_FORCE_CPU, MADEMIND_LLAMA_GPU, MADEMIND_EXPAND_*.
+
+# What gets indexed: one table per collection. Each path is watched for
+# changes and is the only place /file serves from.
+[collections.notes]
+path = "/data/notes"
+pattern = "**/*.md"
+# Gitignore-style patterns to skip.
+ignore = []
+# false = searched only when a query names this collection.
+include_by_default = true
+# Path prefix -> description shown to agents alongside results.
+context = { "/" = "Personal notes" }
+
+[engine]
+# "builtin": rqmd linked into mademind — search, update and embed run
+# in-process. "external": a separate qmd binary, configured in [external]
+# (the builtin engine is then never started).
+kind = "builtin"
+# Context shown to agents for every collection.
+context = ""
+# builtin: index (index.sqlite) and downloaded models (qmd/models/). Empty =
+# $XDG_CACHE_HOME/mademind, else ~/.cache/mademind.
+cache_dir = ""
+# builtin: SQLite index. Empty = <cache_dir>/index.sqlite.
+db = ""
+# builtin: llama.cpp CPU threads. 0 = llama.cpp's default (every core,
+# slower on many-core boxes).
+threads = 4
+
+[engine.models]
+# GGUF model URIs ("hf:<org>/<repo>/<file>.gguf" or a local path). Leave unset
+# unless you want a different model; the defaults are:
+# embed    = "hf:ggml-org/embeddinggemma-300M-GGUF/embeddinggemma-300M-Q8_0.gguf"         # vectors (~300 MB)
+# rerank   = "hf:ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF/qwen3-reranker-0.6b-q8_0.gguf"     # rerank: true (~600 MB)
+# generate = "hf:tobil/qmd-query-expansion-1.7B-gguf/qmd-query-expansion-1.7B-q4_k_m.gguf" # query expansion (~1.2 GB)
+
+[external]
+# qmd binary for `mcp --http`, `update` and `embed`. Empty = never run it.
+bin = "/usr/local/bin/qmd"
+# Loopback address the spawned `qmd mcp --http` binds; never exposed.
+host = "127.0.0.1"
+port = 8181
+# Respawn delay after `qmd mcp` exits.
+retry_seconds = 5
+# Proxy target. Empty = the spawned server above; set (e.g.
+# "http://10.0.0.5:8181") = proxy-only, nothing is spawned.
+upstream = ""
+
+[http]
+port = 8888
+# external: per-request timeout for proxied calls, seconds.
+timeout_secs = 600
+
+[watcher]
+# Re-index this long after the last change to a tracked file.
+debounce_ms = 2000
+extensions = ["md", "markdown"]
+# Also re-index every this many minutes; 0 = only on file events. Set it
+# when the notes are mounted without file events, e.g. Docker/Podman on
+# macOS (updates are incremental, so 5 is cheap).
+rescan_minutes = 0
+
+[embed]
+enabled = true
+interval_minutes = 10
+boot_delay_seconds = 60
+# true = drop and re-embed everything every cycle.
+force = false
+# Empty = all collections.
+collections = []
+# max_docs_per_batch = 64
+# max_batch_mb = 64
+# external only: qmd's `embed --timeout`, minutes.
+# timeout_minutes = 30
+
+# Request auth: a request from a source whose rule has required = true must
+# carry
+#   X-Mademind-Client: <id>
+#   X-Mademind-Timestamp: <unix secs>
+#   X-Mademind-Signature: base64(Ed25519("mademind-auth-v1\n<id>\n<ts>\n<METHOD> <path?query>\n<sha256-hex(body)>"))
+# signed with the client's key. On the client, `bun clients/mademind-auth.ts
+# genkey <id>` writes the private key to ~/.config/mademind/<id>.key and
+# prints the `{ id, public_key }` entry to paste into clients below.
+
+[auth]
+# ± seconds accepted between the signed timestamp and the server clock.
+tolerance_secs = 300
+# The key allowlist; rule `clients` must reference ids defined here.
+clients = []
+# clients = [
+#   { id = "laptop", public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..." },
+# ]
+
+# Per-source-IP rules. The first matching rule (top to bottom) decides; a
+# request whose source matches no rule gets 403. Keep an `ips = ["any"]` rule
+# last as the catch-all. /healthz and /metrics are always open. With no
+# config file at all, the built-in default is a single fail-closed catch-all.
+
+[[auth.rules]]
+ips = ["127.0.0.1/32", "::1/128"]
+required = false                # this machine: no signature needed
+clients = []
+
+[[auth.rules]]
+ips = ["any"]
+required = true                 # everyone else must sign
+clients = []

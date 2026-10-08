@@ -1,0 +1,40 @@
+# mademind config. Copy to config.toml and edit:
+#
+#   cp config.example.toml config.toml
+#
+# This covers what most setups need. Every other key (watcher, embedding
+# schedule, models, cache paths, the external qmd engine) is listed with its
+# default in config.reference.toml.
+
+# What gets indexed: one table per folder of notes. In Docker, the path is
+# where the folder is mounted (docker-compose.yml mounts $NOTES_DIR here).
+[collections.notes]
+path = "/data/notes"
+# Optional: describe the collection for agents, by path prefix.
+context = { "/" = "Personal notes" }
+
+# [collections.work]
+# path = "/data/work"
+# pattern = "**/*.{md,txt}"
+# ignore = ["drafts/**"]
+
+[engine]
+# rqmd built into mademind; nothing else to install.
+kind = "builtin"
+
+# Who may connect. Requests from this machine need nothing; everyone else must
+# sign them with a key listed here. Create one on the client with
+# `bun clients/mademind-auth.ts genkey <id>` and paste the line it prints.
+[auth]
+clients = [
+  # { id = "laptop", public_key = "ssh-ed25519 AAAA..." },
+]
+
+[[auth.rules]]
+ips = ["127.0.0.1/32", "::1/128"]
+required = false
+
+[[auth.rules]]
+ips = ["any"]
+required = true
+clients = []                    # e.g. ["laptop"]

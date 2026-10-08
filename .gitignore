@@ -1,0 +1,6 @@
+target/
+notes/
+.cache/
+config.toml
+.idea/
+dist/

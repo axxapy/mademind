@@ -1,0 +1,45 @@
+[package]
+name = "mademind"
+version = "0.2.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[features]
+default = ["builtin-engine"]
+# rqmd linked into the binary. Needs cmake + a C/C++ toolchain (llama.cpp).
+builtin-engine = ["dep:rqmd-core", "dep:rqmd-mcp", "dep:rmcp", "dep:llama-cpp-2", "dep:llama-cpp-sys-2", "dep:openssl-sys"]
+
+[dependencies]
+anyhow = "1"
+axum = "0.8"
+base64 = "0.23.1"
+ed25519-dalek = "3.0.0"
+notify = "6"
+reqwest = { version = "0.12", default-features = false, features = ["stream"] }
+serde = { version = "1.0.229", features = ["derive"] }
+sha2 = "0.11.0"
+tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "time", "sync", "net", "signal"] }
+toml = "1.1.6"
+rqmd-core = { version = "0.2.1", optional = true }
+rqmd-mcp = { version = "0.2.1", optional = true }
+rmcp = { version = "1.7", optional = true, default-features = false, features = ["server", "transport-streamable-http-server", "transport-streamable-http-server-session", "tower"] }
+serde_json = "1"
+# rqmd-core 0.2.1 asks for llama-cpp-2 "0.1" but only builds against the
+# version its own lockfile pins (0.1.147+ changed the tokenizer API), and
+# llama-cpp-2 in turn floats its -sys crate the same way.
+llama-cpp-2 = { version = "=0.1.146", optional = true, default-features = false }
+llama-cpp-sys-2 = { version = "=0.1.146", optional = true, default-features = false }
+
+# rqmd's model downloader (hf-hub) uses native-tls, i.e. OpenSSL on Linux:
+# build it from source and link it statically, so cross builds (musl, arm)
+# need no target OpenSSL and the binary no runtime libssl.
+[target.'cfg(target_os = "linux")'.dependencies]
+openssl-sys = { version = "0.9", optional = true, features = ["vendored"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
