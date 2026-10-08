@@ -86,7 +86,7 @@ Response: `{"results": [{"docid", "file", "title", "score", "context", "line", "
 - an absolute path equal to, or below, a collection root;
 - a search hit's path: `<collection>/<rel>` or `qmd://<collection>/<rel>`. The engine normalises the paths it returns (e.g. `AGENT_MEMORY.md` → `AGENT-MEMORY.md`); when such a path doesn't exist literally, the builtin engine maps it back to the file on disk.
 
-Anything containing `..`, outside every collection, or naming an unknown collection is 403. Missing `path` is 400, a missing file or a directory 404, files over 2 MiB 413.
+Anything containing `..`, outside every collection, or naming an unknown collection is 403. Missing `path` is 400, a missing file or a directory 404, files over 2 MiB 413. A served file comes with `x-mademind-file: <collection>/<rel>`: its real path inside the collection (percent-encoded), since hit paths may be normalised.
 
 ## 5. Configuration
 
@@ -179,11 +179,12 @@ Keys: `[auth] clients` holds OpenSSH public key bodies (`ssh-ed25519 AAAA…`). 
 | File                               | Purpose                                                                                           |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `clients/lib/auth.ts`              | Request signing: key loading, Ed25519 via `node:crypto` or the `openssl` CLI (≥ 3.0)              |
+| `clients/lib/config.ts`            | Per-machine settings (`client.json` + env): server, client id, key file, local roots              |
 | `clients/mademind-auth.ts`         | CLI: `genkey [id]`, `request METHOD PATH [BODY]`, `sign <message>`, `backend`                     |
 | `clients/mcp-stdio-proxy.ts`       | stdio ↔ Streamable HTTP MCP bridge; signs requests, defaults `rerank` to false                    |
 | `clients/pi-extension/mademind.ts` | pi tools `mademind_search` and `mademind_read`; single file with its own copy of the signing code |
 
-All run on Bun, or Node ≥ 22.6 with `--experimental-strip-types`. Client environment: `MADEMIND_URL`, `MADEMIND_CLIENT_ID` (default: short hostname), `MADEMIND_SIGN_KEY` or `MADEMIND_SIGN_KEY_FILE`, `MADEMIND_AUTH_BACKEND` (`node`/`openssl`).
+All run on Bun, or Node ≥ 22.6 with `--experimental-strip-types`. Per-machine settings live in `~/.config/mademind/client.json` (or `$MADEMIND_CLIENT_CONFIG`): `url` (default `http://127.0.0.1:8888`), `client_id` (default: short hostname), `key_file` (default `~/.config/mademind/<client_id>.key`), `local_roots` (collection → folder where this machine has a copy). Environment overrides: `MADEMIND_URL`, `MADEMIND_CLIENT_ID`, `MADEMIND_SIGN_KEY` / `MADEMIND_SIGN_KEY_FILE`, `MADEMIND_LOCAL_ROOTS` (`name=/path,…`), plus `MADEMIND_AUTH_BACKEND` (`node`/`openssl`). Reading a file reports its real collection path and, if `local_roots` maps its collection and the file exists there, its path on this machine — never a guessed one.
 
 ## 9. Process
 

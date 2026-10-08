@@ -12,24 +12,55 @@
  * Index freshness is the server's job (watcher -> update, 2s debounce; embed
  * every 10 min), not the agents': no refresh hooks here.
  *
- * Env:
- *   MADEMIND_URL        server base URL (default http://127.0.0.1:8888)
- *   MADEMIND_CLIENT_ID  client id for request signing (default: short hostname)
- *   MADEMIND_SIGN_KEY   64-byte hex key, else the file MADEMIND_SIGN_KEY_FILE
- *                       (default ~/.config/mademind/<client-id>.key)
+ * Settings: ~/.config/mademind/client.json (or $MADEMIND_CLIENT_CONFIG) —
+ * url, client_id, key_file, local_roots — with env overrides MADEMIND_URL,
+ * MADEMIND_CLIENT_ID, MADEMIND_SIGN_KEY / MADEMIND_SIGN_KEY_FILE,
+ * MADEMIND_LOCAL_ROOTS. See ../lib/config.ts for the format. mademind_read
+ * shows a file's real name and, when local_roots maps its collection and the
+ * file exists there, its path on this machine.
  *
- * Deploys as this one file (pi loads it directly), so request signing is
- * inlined here rather than imported from ../lib/auth.ts; keep the two in sync.
+ * Deploys as this one file (pi loads it directly), so config loading and
+ * request signing are inlined here rather than imported from ../lib; keep
+ * them in sync.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createHash, createPrivateKey, sign } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 
-const BASE = (process.env.MADEMIND_URL ?? "http://127.0.0.1:8888").replace(/\/+$/, "");
-const CLIENT_ID = process.env.MADEMIND_CLIENT_ID || hostname().split(".")[0];
+// Per-machine settings (same format as ../lib/config.ts).
+const expand = (p: string) => (p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p);
+const CONFIG: { url?: string; client_id?: string; key_file?: string; local_roots?: Record<string, string> } =
+  (() => {
+    const f = process.env.MADEMIND_CLIENT_CONFIG || join(homedir(), ".config", "mademind", "client.json");
+    try {
+      return JSON.parse(readFileSync(f, "utf8"));
+    } catch {
+      return {};
+    }
+  })();
+const BASE = (process.env.MADEMIND_URL || CONFIG.url || "http://127.0.0.1:8888").replace(/\/+$/, "");
+const CLIENT_ID = process.env.MADEMIND_CLIENT_ID || CONFIG.client_id || hostname().split(".")[0];
+const LOCAL_ROOTS: Record<string, string> = (() => {
+  const roots: Record<string, string> = {};
+  for (const [k, v] of Object.entries(CONFIG.local_roots ?? {})) roots[k] = expand(v);
+  for (const pair of (process.env.MADEMIND_LOCAL_ROOTS ?? "").split(",")) {
+    const i = pair.indexOf("=");
+    if (i > 0) roots[pair.slice(0, i).trim()] = expand(pair.slice(i + 1).trim());
+  }
+  return roots;
+})();
+
+/** Local path of `<collection>/<rel>` on this machine, if the file is there. */
+function localPath(collectionPath: string): string | null {
+  const i = collectionPath.indexOf("/");
+  const root = LOCAL_ROOTS[i < 0 ? collectionPath : collectionPath.slice(0, i)];
+  if (!root) return null;
+  const p = i < 0 ? root : join(root, collectionPath.slice(i + 1));
+  return existsSync(p) ? p : null;
+}
 const PKCS8_PREFIX = Buffer.from("302e020100300506032b657004220420", "hex"); // Ed25519 seed -> DER
 
 /** Signing key from env or key file; null = send unsigned (fine for open sources). */
@@ -39,10 +70,8 @@ function loadSeed(): Buffer | null {
   let hex = process.env.MADEMIND_SIGN_KEY ?? "";
   if (!hex) {
     try {
-      hex = readFileSync(
-        process.env.MADEMIND_SIGN_KEY_FILE || join(homedir(), ".config", "mademind", `${CLIENT_ID}.key`),
-        "utf8",
-      );
+      const f = process.env.MADEMIND_SIGN_KEY_FILE || CONFIG.key_file;
+      hex = readFileSync(f ? expand(f) : join(homedir(), ".config", "mademind", `${CLIENT_ID}.key`), "utf8");
     } catch {
       hex = "";
     }
@@ -146,7 +175,14 @@ export default function (pi: ExtensionAPI) {
       if (res.status === 404) return text(`not found: ${params.path}`);
       if (res.status === 403) return text(`forbidden (not in any collection): ${params.path}`);
       if (!res.ok) return text(`mademind /file error ${res.status}: ${await res.text()}`);
-      return text(await res.text());
+      // The server reports the file's real name (hit paths are normalised).
+      const real = decodeURIComponent(res.headers.get("x-mademind-file") ?? params.path);
+      const local = localPath(real);
+      const head = [
+        `file: ${real}`,
+        local ? `local: ${local} (edit this file to change the note)` : "local: no copy on this machine",
+      ].join("\n");
+      return text(`${head}\n\n${await res.text()}`);
     },
   });
 }

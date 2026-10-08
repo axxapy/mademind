@@ -16,9 +16,10 @@
 //                 "args": ["<this-file>", "http://127.0.0.1:8888/mcp"] }
 
 import { authHeaders } from "./lib/auth.ts";
+import { serverUrl } from "./lib/config.ts";
 
-const UPSTREAM =
-  process.argv[2] ?? `${(process.env.MADEMIND_URL ?? "http://127.0.0.1:8888").replace(/\/+$/, "")}/mcp`;
+// Server: argv, else client.json / MADEMIND_URL (lib/config.ts).
+const UPSTREAM = process.argv[2] ?? `${serverUrl()}/mcp`;
 let sessionId: string | undefined;
 let pending = 0;
 let stdinEnded = false;

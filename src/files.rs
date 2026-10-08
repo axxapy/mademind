@@ -122,6 +122,38 @@ fn find_by_handle(root: &Path, rel: &str) -> Option<PathBuf> {
 }
 
 /// Serve a validated file: 404 / 413 / 200 + content-type.
+/// Header naming the served file's real path inside its collection
+/// (`<collection>/<rel>`, percent-encoded): hit paths are normalised, and
+/// clients need the real name to find or edit the file.
+pub const FILE_HEADER: &str = "x-mademind-file";
+
+/// `<collection>/<rel>` of a resolved file (or just `<collection>` when the
+/// collection root is the file itself).
+fn collection_path(target: &Path, collections: &Collections) -> Option<String> {
+    collections.iter().find_map(|(name, root)| {
+        let rel = target.strip_prefix(root).ok()?;
+        let rel = rel.to_string_lossy();
+        Some(if rel.is_empty() {
+            name.clone()
+        } else {
+            format!("{name}/{rel}")
+        })
+    })
+}
+
+/// Percent-encode everything but unreserved characters and `/`, so any file
+/// name fits in a header value.
+fn pct_encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
 fn serve_file_bytes(target: &Path) -> Response {
     let Ok(meta) = fs::metadata(target) else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
@@ -143,10 +175,18 @@ pub fn handle_file(query: Option<&str>, collections: &Collections) -> Response {
     let Some(q) = query.and_then(|q| q.strip_prefix("path=")) else {
         return (StatusCode::BAD_REQUEST, "missing path").into_response();
     };
-    match resolve_data_path(q, collections) {
-        Some(target) => serve_file_bytes(&target),
-        None => (StatusCode::FORBIDDEN, "forbidden").into_response(),
+    let Some(target) = resolve_data_path(q, collections) else {
+        return (StatusCode::FORBIDDEN, "forbidden").into_response();
+    };
+    let mut resp = serve_file_bytes(&target);
+    if resp.status() == StatusCode::OK {
+        if let Some(v) = collection_path(&target, collections)
+            .and_then(|p| header::HeaderValue::from_str(&pct_encode(&p)).ok())
+        {
+            resp.headers_mut().insert(FILE_HEADER, v);
+        }
     }
+    resp
 }
 
 #[cfg(test)]
@@ -268,6 +308,31 @@ mod tests {
             .set_len(MAX_FILE_BYTES + 1)
             .unwrap(); // sparse
         assert_eq!(serve_file_bytes(&big).status(), 413);
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn handle_file_reports_real_collection_path() {
+        let d = tmpdir("hdr");
+        fs::create_dir_all(d.join("Заметки")).unwrap();
+        fs::write(d.join("Заметки/AGENT_MEMORY.md"), "x").unwrap();
+        let rts = Collections::from([("notes".into(), d.clone())]);
+        let dp = d.to_string_lossy();
+        for q in [
+            format!("path={dp}/Заметки/AGENT_MEMORY.md"),
+            "path=notes/Заметки/AGENT_MEMORY.md".into(),
+        ] {
+            let r = handle_file(Some(&q), &rts);
+            assert_eq!(r.status(), 200);
+            assert_eq!(
+                r.headers()[FILE_HEADER],
+                "notes/%D0%97%D0%B0%D0%BC%D0%B5%D1%82%D0%BA%D0%B8/AGENT_MEMORY.md"
+            );
+        }
+        assert!(handle_file(Some("path=notes/missing.md"), &rts)
+            .headers()
+            .get(FILE_HEADER)
+            .is_none());
         let _ = fs::remove_dir_all(&d);
     }
 

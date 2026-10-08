@@ -70,6 +70,18 @@ bun clients/mademind-auth.ts genkey laptop
 
 That saves a private key to `~/.config/mademind/laptop.key` and prints a line to paste into the server's `config.toml` under `[auth] clients` (and add `"laptop"` to a rule's `clients`). The clients above pick the key up automatically.
 
+Then tell the clients on that machine where the server is (and, optionally, where this machine has its own copy of each collection, so agents get real local paths to edit) in `~/.config/mademind/client.json`:
+
+```json
+{
+  "url": "http://notes-server:8888",
+  "client_id": "laptop",
+  "local_roots": { "notes": "~/notes" }
+}
+```
+
+A local path is only shown when the file is actually there, so a machine without a copy never gets a wrong one.
+
 ## Two engines
 
 - **builtin** (default) — rqmd inside mademind. One process, nothing else to install.

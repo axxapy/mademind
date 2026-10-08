@@ -8,9 +8,8 @@
 //   mademind-auth-v1\n<client-id>\n<unix-ts>\n<METHOD> <path?query>\n<sha256-hex(body)>
 //
 // Keys: 64-byte hex = 32-byte seed || 32-byte public key, in
-// $MADEMIND_SIGN_KEY, else the file $MADEMIND_SIGN_KEY_FILE, else
-// ~/.config/mademind/<client-id>.key. The client id is $MADEMIND_CLIENT_ID,
-// else the short hostname.
+// $MADEMIND_SIGN_KEY, else the key file (see config.ts: env, client.json,
+// default ~/.config/mademind/<client-id>.key).
 //
 // No dependencies. Ed25519 comes from the first backend that works: the
 // runtime's node:crypto (bun or node), then the system `openssl` CLI
@@ -21,8 +20,11 @@
 import { execFileSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, hostname, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { clientId, keyFile } from "./config.ts";
+
+export { clientId, keyFile };
 
 export const AUTH_VERSION = "mademind-auth-v1";
 
@@ -103,14 +105,6 @@ export function backend(): Backend {
   picked = Object.values(BACKENDS).find(usable);
   if (!picked) throw new Error("no Ed25519 backend: need node:crypto with ed25519 support or openssl >= 3.0");
   return picked;
-}
-
-export function clientId(): string {
-  return process.env.MADEMIND_CLIENT_ID || hostname().split(".")[0];
-}
-
-export function keyFile(id = clientId()): string {
-  return process.env.MADEMIND_SIGN_KEY_FILE || join(homedir(), ".config", "mademind", `${id}.key`);
 }
 
 /** The signing seed, or null when no key is configured (unsigned requests). */

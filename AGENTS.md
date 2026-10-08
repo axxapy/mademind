@@ -35,7 +35,7 @@ mademind serves a person's markdown notes on one port (default `http://localhost
 - Optional: `intent` (what you're after, steers snippets), `minScore`, `candidateLimit`.
 - Response: `{"results": [{"docid", "file", "title", "score", "context", "line", "snippet"}]}`. `file` is `<collection>/<path>`.
 
-**Read before you cite.** Results are pointers; read the file (`GET /file?path=<file>` with the hit's `file`, or the MCP `get` tool) and quote that, never the snippet. `/file` also takes absolute paths inside a collection; anything else is 403.
+**Read before you cite.** Results are pointers; read the file (`GET /file?path=<file>` with the hit's `file`, or the MCP `get` tool) and quote that, never the snippet. `/file` also takes absolute paths inside a collection; anything else is 403. Hit paths can be normalised (`AGENT_MEMORY.md` comes back as `AGENT-MEMORY.md`); `/file` still finds the file and returns its real `<collection>/<path>` in the `x-mademind-file` header. To *edit* a note, use a real local path: the pi tool and `mademind-auth.ts request` print one when this machine has the collection (`local_roots` in `~/.config/mademind/client.json`) — never guess one.
 
 **Auth.** Requests from the server's own machine usually need nothing. From elsewhere, sign each request (otherwise 401):
 
