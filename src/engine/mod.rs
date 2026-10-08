@@ -4,6 +4,8 @@
 #[cfg(feature = "builtin-engine")]
 pub mod builtin;
 pub mod external;
+#[cfg(feature = "builtin-engine")]
+mod mcp;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};

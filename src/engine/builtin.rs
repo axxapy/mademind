@@ -30,6 +30,7 @@ use rqmd_mcp::QmdMcpServer;
 use serde_json::{json, Value};
 use tokio::sync::oneshot;
 
+use super::mcp::{Instructions, McpServer};
 use super::EmbedStats;
 use crate::config::{Config, EmbedConfig, EngineConfig};
 
@@ -47,6 +48,7 @@ enum Job {
 pub struct Builtin {
     jobs: mpsc::Sender<Job>,
     server: QmdMcpServer,
+    instructions: Instructions,
     started: Instant,
 }
 
@@ -124,21 +126,25 @@ impl Builtin {
         // Query side first: opening syncs the collections file into the DB.
         let server = QmdMcpServer::new(open_store(opts.clone())?);
         let writer = open_store(opts)?;
+        let instructions = Instructions::new(&server);
+        instructions.refresh(&writer);
 
         let (jobs, rx) = mpsc::channel::<Job>();
+        let live = instructions.clone();
         thread::Builder::new()
             .name("indexer".into())
-            .spawn(move || run_indexer(writer, rx))
+            .spawn(move || run_indexer(writer, rx, live))
             .context("spawning indexer thread")?;
         Ok(Builtin {
             jobs,
             server,
+            instructions,
             started: Instant::now(),
         })
     }
 
     pub fn router(&self) -> Router {
-        let server = self.server.clone();
+        let server = McpServer::new(self.server.clone(), self.instructions.clone());
         // Host validation is off: requests reach this router only through the
         // auth layer, and LAN clients send their own Host (rmcp's default
         // allows loopback names only).
@@ -248,8 +254,8 @@ fn error_json(status: StatusCode, msg: &str) -> Response {
 }
 
 /// Owns the write-side store; runs jobs in arrival order until the engine is
-/// dropped.
-fn run_indexer(mut store: RqmdStore, rx: mpsc::Receiver<Job>) {
+/// dropped. After each job, refreshes the MCP instructions from the index.
+fn run_indexer(mut store: RqmdStore, rx: mpsc::Receiver<Job>, instructions: Instructions) {
     let rt = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -264,6 +270,7 @@ fn run_indexer(mut store: RqmdStore, rx: mpsc::Receiver<Job>) {
         match job {
             Job::Update(reply) => {
                 let r = rt.block_on(store.update(UpdateOptions::default()));
+                instructions.refresh(&store);
                 let _ = reply.send(r.map_err(Into::into));
             }
             Job::Embed(opts, reply) => {
@@ -285,6 +292,7 @@ fn run_indexer(mut store: RqmdStore, rx: mpsc::Receiver<Job>) {
                     }
                     Ok::<_, rqmd_core::Error>(total)
                 });
+                instructions.refresh(&store);
                 let _ = reply.send(r.map_err(Into::into));
             }
         }
@@ -357,6 +365,29 @@ mod tests {
             results[0]["file"].as_str().unwrap().ends_with("a.md"),
             "{v}"
         );
+
+        // A new MCP session sees the index as it is now, not as it was at
+        // startup (0 documents).
+        let init = r#"{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"#;
+        let resp = engine
+            .router()
+            .oneshot(
+                Request::post("/mcp")
+                    .header("host", "localhost")
+                    .header("content-type", "application/json")
+                    .header("accept", "application/json, text/event-stream")
+                    .body(Body::from(init))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("over 2 markdown documents"), "{text}");
+        assert!(!text.contains("rqmd embed"), "{text}");
 
         // Missing searches -> 400, same as qmd.
         let resp = engine
