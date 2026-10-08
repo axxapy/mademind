@@ -74,8 +74,12 @@ const RQMD_PASSTHROUGH: &[&str] = &[
 
 /// Translate mademind's settings into the environment rqmd and llama.cpp
 /// read. Must run before any thread starts (set_var is not thread-safe).
-pub fn export_env(cfg: &EngineConfig) {
+pub fn export_env(cfg: &mut EngineConfig) {
     let cache = cfg.cache_dir();
+    // Pin it: cache_dir() defaults to $XDG_CACHE_HOME/mademind, and
+    // XDG_CACHE_HOME is about to become the cache dir itself, so a later call
+    // (db_path) would land one level deeper, in <cache>/mademind.
+    cfg.cache_dir = cache.to_string_lossy().into_owned();
     std::env::set_var("RQMD_CACHE_DIR", &cache);
     // rqmd keeps downloaded models in $XDG_CACHE_HOME/qmd/models (it ignores
     // RQMD_CACHE_DIR for them); point that into the cache dir too, so the

@@ -47,7 +47,7 @@ fn main() {
     // environment; set it before any thread exists.
     #[cfg(feature = "builtin-engine")]
     if kind == EngineKind::Builtin {
-        engine::builtin::export_env(&cfg.engine);
+        engine::builtin::export_env(&mut cfg.engine);
     }
     // external: qmd reads its collections from $QMD_CONFIG_DIR/index.yml,
     // generated here from config.toml and inherited by every qmd child.
