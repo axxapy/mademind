@@ -1,6 +1,6 @@
 # mademind — specification
 
-What mademind does, precisely. For a quick start see [README.md](README.md); for agents, [AGENTS.md](AGENTS.md). Version 0.2.0.
+What mademind does, precisely. For a quick start see [README.md](README.md); for agents, [AGENTS.md](AGENTS.md). Version 0.2.1.
 
 ## 1. Overview
 
