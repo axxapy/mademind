@@ -188,7 +188,7 @@ All run on Bun, or Node ≥ 22.6 with `--experimental-strip-types`. Per-machine 
 
 ## 9. Process
 
-- `mademind` runs the server; `mademind healthcheck` exits 0 if the local server answers `/healthz` (used by the Docker health check).
+- `mademind` runs the server; `mademind healthcheck` exits 0 if the local server answers `/healthz` (used by the Docker health check); `mademind --version` prints the version.
 - SIGTERM or Ctrl-C: graceful HTTP shutdown, engine shutdown, the external child is stopped.
 - Startup errors (unknown engine, unbindable port, engine that fails to open) exit with status 2; an auth rule with an undefined client exits 3.
 

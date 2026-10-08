@@ -62,18 +62,18 @@ cargo fmt
 
 Where things are:
 
-| Path                     | What                                                                            |
-| ------------------------ | ------------------------------------------------------------------------------- |
-| `src/main.rs`            | startup: config, engine, watcher thread, embed task, HTTP server, `healthcheck` |
-| `src/config.rs`          | `config.toml` schema, defaults, env overrides                                   |
-| `src/http.rs`            | axum router, auth layer, request metrics                                        |
-| `src/auth.rs`            | signature verification, per-IP rules                                            |
-| `src/files.rs`           | `/file`                                                                         |
-| `src/engine/builtin.rs`  | rqmd in-process: query side + indexer thread                                    |
-| `src/engine/mcp.rs`      | MCP handler: rqmd-mcp server with instructions rebuilt from the live index      |
-| `src/engine/external.rs` | qmd child process: supervisor, proxy, `update`/`embed` commands                 |
-| `src/watcher.rs`         | inotify + debounce                                                              |
-| `clients/lib/auth.ts`    | the one client-side implementation of request signing                           |
+| Path                     | What                                                                                         |
+| ------------------------ | -------------------------------------------------------------------------------------------- |
+| `src/main.rs`            | startup: config, engine, watcher thread, embed task, HTTP server, `healthcheck`, `--version` |
+| `src/config.rs`          | `config.toml` schema, defaults, env overrides                                                |
+| `src/http.rs`            | axum router, auth layer, request metrics                                                     |
+| `src/auth.rs`            | signature verification, per-IP rules                                                         |
+| `src/files.rs`           | `/file`                                                                                      |
+| `src/engine/builtin.rs`  | rqmd in-process: query side + indexer thread                                                 |
+| `src/engine/mcp.rs`      | MCP handler: rqmd-mcp server with instructions rebuilt from the live index                   |
+| `src/engine/external.rs` | qmd child process: supervisor, proxy, `update`/`embed` commands                              |
+| `src/watcher.rs`         | inotify + debounce                                                                           |
+| `clients/lib/auth.ts`    | the one client-side implementation of request signing                                        |
 
 Things that bite:
 

@@ -32,6 +32,13 @@ fn die(msg: impl std::fmt::Display) -> ! {
 }
 
 fn main() {
+    if matches!(
+        std::env::args().nth(1).as_deref(),
+        Some("--version" | "-V" | "version")
+    ) {
+        println!("mademind {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     let mut cfg = load_config(&config_path());
     apply_env_overrides(&mut cfg);
     if std::env::args().nth(1).as_deref() == Some("healthcheck") {
