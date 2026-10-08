@@ -33,7 +33,7 @@ Tags: `latest`, `X.Y.Z`, `X.Y`; `classic` (and `X.Y.Z-classic`) runs the origina
 Or grab a binary from [Releases](../../releases) and run it:
 
 ```sh
-MADEMIND_CONFIG=./config.toml ./mademind
+./mademind serve -c config.toml
 ```
 
 Edit `config.toml` to point `[collections.notes] path` at your notes (or add more collections). Keyword search works right away; about a minute after start mademind downloads a ~300 MB embedding model and semantic search follows once your notes are embedded.
@@ -58,6 +58,19 @@ curl localhost:8888/query -H 'content-type: application/json' \
 curl 'localhost:8888/file?path=notes/bread.md'
 ```
 
+**The command line** — the same binary is a client too, with qmd's commands and flags, so `qmd` habits (and scripts) carry over:
+
+```sh
+mademind query "how do I feed the starter"     # keywords + meaning, reranked (--no-rerank: fast)
+mademind search sourdough -n 10 --json         # keywords only
+mademind vsearch "bread that didn't rise"      # meaning only
+mademind get notes/bread.md:20:10              # a file (or #docid), from line 20, 10 lines
+mademind multi-get 'notes/2025-*.md'
+mademind status
+```
+
+It talks to `http://127.0.0.1:8888` unless `~/.config/mademind/client.json` says otherwise (below). What qmd does locally (`collection add`, `update`, `embed`) the server does from its `config.toml`.
+
 [AGENTS.md](AGENTS.md) has the details agents need; [SPEC.md](SPEC.md) has everything.
 
 ## Other machines
@@ -65,10 +78,10 @@ curl 'localhost:8888/file?path=notes/bread.md'
 Requests from the machine mademind runs on are trusted; everyone else has to sign them. On the client:
 
 ```sh
-bun clients/mademind-auth.ts genkey laptop
+mademind genkey laptop
 ```
 
-That saves a private key to `~/.config/mademind/laptop.key` and prints a line to paste into the server's `config.toml` under `[auth] clients` (and add `"laptop"` to a rule's `clients`). The clients above pick the key up automatically.
+That saves a private key to `~/.config/mademind/laptop.key` and prints a line to paste into the server's `config.toml` under `[auth] clients` (and add `"laptop"` to a rule's `clients`). The CLI and the clients above pick the key up automatically. (No binary on that machine? `bun clients/mademind-auth.ts genkey laptop` does the same.)
 
 Then tell the clients on that machine where the server is (and, optionally, where this machine has its own copy of each collection, so agents get real local paths to edit) in `~/.config/mademind/client.json`:
 

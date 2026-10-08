@@ -24,7 +24,7 @@ kind = "builtin"
 
 # Who may connect. Requests from this machine need nothing; everyone else must
 # sign them with a key listed here. Create one on the client with
-# `bun clients/mademind-auth.ts genkey <id>` and paste the line it prints.
+# `mademind genkey <id>` and paste the line it prints.
 [auth]
 clients = [
   # { id = "laptop", public_key = "ssh-ed25519 AAAA..." },

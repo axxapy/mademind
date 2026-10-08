@@ -35,7 +35,7 @@ mademind serves a person's markdown notes on one port (default `http://localhost
 - Optional: `intent` (what you're after, steers snippets), `minScore`, `candidateLimit`.
 - Response: `{"results": [{"docid", "file", "title", "score", "context", "line", "snippet"}]}`. `file` is `<collection>/<path>`.
 
-**Read before you cite.** Results are pointers; read the file (`GET /file?path=<file>` with the hit's `file`, or the MCP `get` tool) and quote that, never the snippet. `/file` also takes absolute paths inside a collection; anything else is 403. Hit paths can be normalised (`AGENT_MEMORY.md` comes back as `AGENT-MEMORY.md`); `/file` still finds the file and returns its real `<collection>/<path>` in the `x-mademind-file` header. To *edit* a note, use a real local path: the pi tool and `mademind-auth.ts request` print one when this machine has the collection (`local_roots` in `~/.config/mademind/client.json`) — never guess one.
+**Read before you cite.** Results are pointers; read the file (`GET /file?path=<file>` with the hit's `file`, or the MCP `get` tool) and quote that, never the snippet. `/file` also takes absolute paths inside a collection; anything else is 403. Hit paths can be normalised (`AGENT_MEMORY.md` comes back as `AGENT-MEMORY.md`); `/file` still finds the file and returns its real `<collection>/<path>` in the `x-mademind-file` header. To *edit* a note, use a real local path: the pi tool, `mademind get` and `mademind-auth.ts request` print one when this machine has the collection (`local_roots` in `~/.config/mademind/client.json`) — never guess one.
 
 **Auth.** Requests from the server's own machine usually need nothing. From elsewhere, sign each request (otherwise 401):
 
@@ -45,7 +45,7 @@ x-mademind-timestamp: <unix seconds>
 x-mademind-signature: base64(Ed25519(key, "mademind-auth-v1\n<client id>\n<timestamp>\n<METHOD> <path?query>\n<sha256 hex of body>"))
 ```
 
-Easiest: let the shipped clients do it — `bun clients/mademind-auth.ts request POST /query '<json>'` (key in `~/.config/mademind/<id>.key`, created by `genkey`). The same signature can't be reused, so don't send two identical requests in the same second. `GET /healthz` and `GET /metrics` are always open.
+Easiest: let the shipped clients do it — the `mademind` CLI signs every request (`mademind query …`, or raw: `mademind request POST /query '<json>'`); without the binary, `bun clients/mademind-auth.ts request POST /query '<json>'`. Key in `~/.config/mademind/<id>.key`, created by `mademind genkey`. The same signature can't be reused, so don't send two identical requests in the same second. `GET /healthz` and `GET /metrics` are always open.
 
 **Freshness.** The index follows the files: keyword search sees a saved note within ~3 s, semantic search within ~10 min. Don't try to trigger re-indexing.
 

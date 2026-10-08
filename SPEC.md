@@ -149,7 +149,7 @@ mademind-auth-v1
 
 The server rejects timestamps more than `tolerance_secs` from its clock, unknown clients, bad signatures, and a signature it has already accepted within the window (replay). Ed25519 is deterministic, so two identical requests in the same second are rejected as a replay. Bodies up to 16 MiB are buffered for the check.
 
-Keys: `[auth] clients` holds OpenSSH public key bodies (`ssh-ed25519 AAAA…`). The clients store keys as 64-byte hex (32-byte seed ‖ 32-byte public key) in `~/.config/mademind/<id>.key`; `clients/mademind-auth.ts genkey` creates one.
+Keys: `[auth] clients` holds OpenSSH public key bodies (`ssh-ed25519 AAAA…`). The clients store keys as 64-byte hex (32-byte seed ‖ 32-byte public key) in `~/.config/mademind/<id>.key`; `mademind genkey` (or `clients/mademind-auth.ts genkey`) creates one.
 
 ## 7. Metrics
 
@@ -176,6 +176,25 @@ Keys: `[auth] clients` holds OpenSSH public key bodies (`ssh-ed25519 AAAA…`). 
 
 ## 8. Clients
 
+### 8.1 Command line
+
+The binary is also a client, modelled on qmd's CLI so qmd commands, flags and output formats carry over:
+
+| Command                      | Does                                                                                                                  |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `query <q>`                  | `lex` + `vec` on the query, reranked; a multi-line `lex:`/`vec:`/`hyde:`/`intent:` document is sent as typed searches |
+| `search <q>`                 | `lex` only, no rerank                                                                                                 |
+| `vsearch <q>`                | `vec` only, no rerank; `--min-score` defaults to 0.3                                                                  |
+| `get <file>[:from[:count]]`  | MCP `get` (paths, `#docid`); line numbers on unless `--no-line-numbers`                                               |
+| `multi-get <pattern>`        | MCP `multi_get` (glob or comma list)                                                                                  |
+| `status`                     | MCP `status`: documents, embedding backlog, collections                                                               |
+| `genkey [id]`                | new key in `~/.config/mademind/<id>.key` (0600); prints the `[auth] clients` entry                                    |
+| `request METHOD PATH [BODY]` | raw signed request; exits 1 on a non-2xx answer                                                                       |
+
+Search flags: `-n` (5; 20 for json/files), `-c/--collection` (repeatable), `--all`, `--min-score`, `--intent`, `--no-rerank`, `-C/--candidate-limit`, `--full`, `--line-numbers`, `--format cli|json|files|csv|md|xml` (and `--json`, `--files`, …), `--full-path` (local path where `local_roots` maps the collection, matching engine-normalised names back to real ones). qmd's local index commands (`collection`, `context`, `update`, `embed`, …) exit with a pointer to the server config. Settings come from `client.json` as below; requests are signed when a key exists. Glob patterns match indexed names, which the engine normalises (`a_b.md` is indexed as `a-b.md`), as in qmd.
+
+### 8.2 TypeScript clients
+
 | File                               | Purpose                                                                                           |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `clients/lib/auth.ts`              | Request signing: key loading, Ed25519 via `node:crypto` or the `openssl` CLI (≥ 3.0)              |
@@ -188,7 +207,7 @@ All run on Bun, or Node ≥ 22.6 with `--experimental-strip-types`. Per-machine 
 
 ## 9. Process
 
-- `mademind` runs the server; `mademind healthcheck` exits 0 if the local server answers `/healthz` (used by the Docker health check); `mademind --version` prints the version.
+- `mademind serve [-c <file>]` runs the server; the config is `-c`, else `$MADEMIND_CONFIG`, else `/config/config.toml`. A missing or invalid config exits with status 2 (no silent defaults). `mademind healthcheck [-c <file>]` exits 0 if the local server answers `/healthz` (the Docker health check). `mademind --version` prints the version; `mademind` alone prints help. Everything else is the client (§8.1).
 - SIGTERM or Ctrl-C: graceful HTTP shutdown, engine shutdown, the external child is stopped.
 - Startup errors (unknown engine, unbindable port, engine that fails to open) exit with status 2; an auth rule with an undefined client exits 3.
 

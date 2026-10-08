@@ -79,8 +79,7 @@ impl AuthState {
         if dt < -self.tolerance || dt > self.tolerance {
             return Err(AuthError::Expired);
         }
-        let digest = sha256_hex(body);
-        let message = format!("{AUTH_VERSION}\n{client}\n{ts}\n{method} {url}\n{digest}");
+        let message = signing_message(client, ts, method, url, body);
         let sig_bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, sig)
             .map_err(|_| AuthError::BadSignature)?;
         let sig = ed25519_dalek::Signature::from_slice(&sig_bytes)
@@ -143,6 +142,24 @@ pub fn check(
             AuthError::BadSignature => (401, "bad signature"),
             AuthError::Replay => (401, "replayed signature"),
         })
+}
+
+/// The exact bytes a client signs (and the server verifies) for one request.
+/// `url` is the request target as sent: path plus `?query`.
+pub fn signing_message(client: &str, ts: i64, method: &str, url: &str, body: &[u8]) -> String {
+    let digest = sha256_hex(body);
+    format!("{AUTH_VERSION}\n{client}\n{ts}\n{method} {url}\n{digest}")
+}
+
+/// `ssh-ed25519 <base64 blob>`: the public-key form `[auth] clients` takes.
+pub fn public_key_line(raw: &[u8; 32]) -> String {
+    let mut blob = Vec::with_capacity(4 + 11 + 4 + 32);
+    blob.extend_from_slice(&11u32.to_be_bytes());
+    blob.extend_from_slice(b"ssh-ed25519");
+    blob.extend_from_slice(&32u32.to_be_bytes());
+    blob.extend_from_slice(raw);
+    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, blob);
+    format!("ssh-ed25519 {b64}")
 }
 
 /// Parse a single OpenSSH public-key line body (`ssh-ed25519 <base64>`) into
@@ -359,6 +376,13 @@ pub(crate) mod tests {
         assert!(!a.rule_for("127.0.0.1").unwrap().required);
         assert!(a.rule_for("192.168.1.55").unwrap().required);
         assert!(a.rule_for("8.8.8.8").unwrap().required); // falls to any
+    }
+
+    #[test]
+    fn public_key_line_parses_back() {
+        let (_, vk, _) = test_keypair("x");
+        let line = public_key_line(vk.as_bytes());
+        assert_eq!(parse_public_key(&line).unwrap(), *vk.as_bytes());
     }
 
     #[test]

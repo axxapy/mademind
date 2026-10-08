@@ -38,4 +38,4 @@ WORKDIR /root
 EXPOSE 8888
 HEALTHCHECK --interval=60s --timeout=10s CMD ["mademind", "healthcheck"]
 # Config: /config/config.toml (see config.example.toml / config.reference.toml).
-CMD ["mademind"]
+CMD ["mademind", "serve"]

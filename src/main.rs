@@ -1,4 +1,5 @@
-//! mademind: one binary that serves your notes to AI agents on one port.
+//! mademind: one binary that serves your notes to AI agents on one port
+//! (`mademind serve`), and the qmd-style client for it (src/cli.rs).
 //!
 //!   http (tokio, 0.0.0.0:$PORT) : auth -> /healthz, /metrics, /file, else the engine
 //!   engine "builtin"            : rqmd linked in; search, update and embed in-process
@@ -10,6 +11,8 @@
 //! Run the test suite:  cargo test   (no Docker, no models, no network needed)
 
 mod auth;
+mod cli;
+mod client;
 mod config;
 mod engine;
 mod files;
@@ -18,12 +21,15 @@ mod metrics;
 mod watcher;
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use config::{apply_env_overrides, config_path, load_config, Config, EngineKind};
+use config::{
+    apply_env_overrides, config_path, load_config, load_config_strict, Config, EngineKind,
+};
 use engine::Engine;
 
 fn die(msg: impl std::fmt::Display) -> ! {
@@ -32,18 +38,44 @@ fn die(msg: impl std::fmt::Display) -> ! {
 }
 
 fn main() {
-    if matches!(
-        std::env::args().nth(1).as_deref(),
-        Some("--version" | "-V" | "version")
-    ) {
-        println!("mademind {}", env!("CARGO_PKG_VERSION"));
-        return;
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    let Some(cmd) = argv.first().map(String::as_str) else {
+        cli::help();
+        std::process::exit(2);
+    };
+    let rest = &argv[1..];
+    match cmd {
+        "--version" | "-V" | "version" => println!("mademind {}", env!("CARGO_PKG_VERSION")),
+        "serve" => serve(server_config_path(rest)),
+        "healthcheck" => {
+            let mut cfg = load_config(&server_config_path(rest));
+            apply_env_overrides(&mut cfg);
+            std::process::exit(healthcheck(cfg.http.port));
+        }
+        _ => match cli::run(cmd, rest) {
+            Ok(code) => std::process::exit(code),
+            Err(e) => die(format!("{e:#}")),
+        },
     }
-    let mut cfg = load_config(&config_path());
+}
+
+/// `-c/--config <file>`, else $MADEMIND_CONFIG, else /config/config.toml.
+fn server_config_path(rest: &[String]) -> PathBuf {
+    let args = cli::Args::parse(rest).unwrap_or_else(|e| die(e));
+    if let Some(unexpected) = args.pos.first() {
+        die(format!(
+            "unexpected argument {unexpected:?} (usage: mademind serve [-c config.toml])"
+        ));
+    }
+    args.opt("config")
+        .or(args.opt("collection")) // -c parses as qmd's collection flag
+        .map(PathBuf::from)
+        .unwrap_or_else(config_path)
+}
+
+fn serve(path: PathBuf) {
+    let mut cfg = load_config_strict(&path).unwrap_or_else(|e| die(e));
     apply_env_overrides(&mut cfg);
-    if std::env::args().nth(1).as_deref() == Some("healthcheck") {
-        std::process::exit(healthcheck(cfg.http.port));
-    }
     let Some(kind) = EngineKind::parse(&cfg.engine.kind) else {
         die(format!(
             "unknown engine {:?} (want builtin or external)",

@@ -117,7 +117,7 @@ jobs:
 
           Original qmd engine (linux/amd64): \`${img}:${v}-classic\`. Setup: see the [README](https://github.com/${GITHUB_REPOSITORY}#quick-start).
 
-          **Binaries**: pick the archive for your platform below and check it against \`SHA256SUMS\`. Windows on ARM: use \`windows-x86_64\` (runs under emulation).
+          **Binaries**: pick the archive for your platform below and check it against \`SHA256SUMS\`. Windows on ARM: use \`windows-x86_64\` (runs under emulation). Run the server with \`mademind serve -c config.toml\`; the same binary is a qmd-style client (\`mademind query "..."\`, \`mademind help\`).
           EOF
           cat notes.md
 

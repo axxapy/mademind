@@ -95,7 +95,7 @@ fn resolve_data_path(raw: &str, collections: &Collections) -> Option<PathBuf> {
 /// Directories and the final file normalise differently (the file keeps its
 /// extension), so each is measured in its position in a path.
 #[cfg(feature = "builtin-engine")]
-fn find_by_handle(root: &Path, rel: &str) -> Option<PathBuf> {
+pub(crate) fn find_by_handle(root: &Path, rel: &str) -> Option<PathBuf> {
     use rqmd_core::store::docid::handelize;
     let segments: Vec<&str> = rel.split('/').collect();
     let mut dir = root.to_path_buf();

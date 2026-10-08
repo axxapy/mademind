@@ -15,7 +15,8 @@ axum = "0.8"
 base64 = "0.23.1"
 ed25519-dalek = "3.0.0"
 notify = "6"
-reqwest = { version = "0.12", default-features = false, features = ["stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
+getrandom = "0.3"
 serde = { version = "1.0.229", features = ["derive"] }
 sha2 = "0.11.0"
 tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "time", "sync", "net", "signal"] }

@@ -95,9 +95,9 @@ collections = []
 #   X-Mademind-Client: <id>
 #   X-Mademind-Timestamp: <unix secs>
 #   X-Mademind-Signature: base64(Ed25519("mademind-auth-v1\n<id>\n<ts>\n<METHOD> <path?query>\n<sha256-hex(body)>"))
-# signed with the client's key. On the client, `bun clients/mademind-auth.ts
-# genkey <id>` writes the private key to ~/.config/mademind/<id>.key and
-# prints the `{ id, public_key }` entry to paste into clients below.
+# signed with the client's key. On the client, `mademind genkey <id>` writes
+# the private key to ~/.config/mademind/<id>.key and prints the
+# `{ id, public_key }` entry to paste into clients below.
 
 [auth]
 # ± seconds accepted between the signed timestamp and the server clock.

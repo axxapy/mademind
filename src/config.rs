@@ -275,6 +275,21 @@ pub fn parse_config_text(text: &str) -> Config {
     }
 }
 
+/// For `serve`: a missing or invalid config is an error, never a silent
+/// fallback to an empty, fail-closed server.
+pub fn load_config_strict(path: &Path) -> Result<Config, String> {
+    let text = fs::read_to_string(path).map_err(|e| {
+        format!(
+            "cannot read config {}: {e} (pass -c <file> or set MADEMIND_CONFIG)",
+            path.display()
+        )
+    })?;
+    let cfg = toml::from_str::<Config>(&text)
+        .map_err(|e| format!("config {} is invalid: {e}", path.display()))?;
+    eprintln!("mademind: config loaded from {path:?}");
+    Ok(cfg)
+}
+
 pub fn load_config(path: &Path) -> Config {
     match fs::read_to_string(path) {
         Ok(text) => {
