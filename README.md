@@ -36,6 +36,16 @@ Or grab a binary from [Releases](../../releases) and run it:
 ./mademind serve -c config.toml
 ```
 
+Homebrew (macOS, Linux); the service reads `~/.config/mademind/config.toml`:
+
+```sh
+brew tap axxapy/mademind https://github.com/axxapy/mademind
+brew install axxapy/mademind/mademind
+brew services start mademind
+```
+
+Arch Linux with an NVIDIA GPU: `packaging/arch/mademind-cuda/` (PKGBUILD and a systemd user unit; `makepkg -si`).
+
 Edit `config.toml` to point `[collections.notes] path` at your notes (or add more collections). Keyword search works right away; about a minute after start mademind downloads a ~300 MB embedding model and semantic search follows once your notes are embedded.
 
 ## Connect your agent
@@ -109,7 +119,7 @@ make test lint                     # what CI runs
 make dist                          # Linux release archives (docker + zig)
 ```
 
-Pushing a `vX.Y.Z` tag builds all platforms, publishes a GitHub release and pushes the images to Docker Hub.
+Pushing a `vX.Y.Z` tag builds all platforms, publishes a GitHub release and pushes the images to Docker Hub. Then `scripts/bump-formula.sh X.Y.Z` points the Homebrew formula at the new release.
 
 ## License
 
