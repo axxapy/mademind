@@ -8,6 +8,11 @@ license = "AGPL-3.0-only"
 default = ["builtin-engine"]
 # rqmd linked into the binary. Needs cmake + a C/C++ toolchain (llama.cpp).
 builtin-engine = ["dep:rqmd-core", "dep:rqmd-mcp", "dep:rmcp", "dep:llama-cpp-2", "dep:llama-cpp-sys-2", "dep:openssl-sys"]
+# GPU backends for the builtin engine (llama.cpp). cuda needs the CUDA
+# toolkit at build time (nvcc; set CMAKE_CUDA_ARCHITECTURES to limit the
+# kernels built), vulkan needs the Vulkan headers and glslc.
+cuda = ["builtin-engine", "rqmd-core/cuda"]
+vulkan = ["builtin-engine", "rqmd-core/vulkan"]
 
 [dependencies]
 anyhow = "1"

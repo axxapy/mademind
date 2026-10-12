@@ -1,0 +1,59 @@
+# Arch package: mademind with the builtin engine on CUDA (llama.cpp).
+#
+#   makepkg -si
+#
+# cuBLAS/cudart are linked statically (~600 MB binary), so at runtime only the
+# driver's libcuda.so is needed (nvidia-utils), not the CUDA toolkit.
+
+pkgname=mademind-cuda
+pkgver=0.2.1
+pkgrel=1
+pkgdesc='Search server for markdown notes, for AI agents (BM25 + vectors + rerank); CUDA build'
+arch=(x86_64)
+url='https://github.com/axxapy/mademind'
+license=(AGPL-3.0-only)
+depends=(gcc-libs glibc nvidia-utils)
+makedepends=(cargo clang cmake cuda gcc15 git)
+provides=(mademind)
+conflicts=(mademind)
+options=(!lto !debug)
+# _mademind_src overrides the source, e.g. a local checkout at a commit
+# (scripts/arch-package.sh, CI): git+file:///src#commit=<sha>
+source=("mademind::${_mademind_src:-git+$url.git#tag=v$pkgver}"
+        mademind.service)
+sha256sums=('SKIP'
+            'a655525627bb14a7a932c4bc2778c3a8964702546d8666da606c16e978b55ef8')
+
+# GPU architectures to build kernels for: "native" = the GPUs in this machine
+# (needs one present at build time); e.g. "89" (RTX 40xx), "86;89;120".
+: "${_cuda_archs:=native}"
+
+prepare() {
+  cd mademind
+  cargo fetch --locked --target "$(rustc --print host-tuple)"
+}
+
+build() {
+  cd mademind
+  export PATH="/opt/cuda/bin:$PATH"
+  # nvcc lags the newest GCC; the cuda package names the supported one.
+  export NVCC_CCBIN=/usr/bin/g++-15 CUDAHOSTCXX=/usr/bin/g++-15
+  export CMAKE_CUDA_ARCHITECTURES="$_cuda_archs"
+  # llama.cpp in llama-cpp-sys-2 0.1.146 (pinned by rqmd-core 0.2.1) misses
+  # `#include <cuda/iterator>`, which CCCL >= 3.4 (CUDA 13.3) requires; newer
+  # llama.cpp has it. Drop once rqmd-core moves past 0.1.146.
+  export CUDAFLAGS="--pre-include cuda/iterator"
+  export CARGO_TARGET_DIR=target
+  # rqmd-core/cuda rather than the `cuda` feature: v0.2.1 predates it.
+  cargo build --frozen --release --features rqmd-core/cuda
+}
+
+package() {
+  cd mademind
+  install -Dm755 target/release/mademind "$pkgdir/usr/bin/mademind"
+  install -Dm644 ../mademind.service "$pkgdir/usr/lib/systemd/user/mademind.service"
+  install -Dm644 -t "$pkgdir/usr/share/doc/mademind" README.md SPEC.md AGENTS.md config.example.toml config.reference.toml
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -d "$pkgdir/usr/share/mademind"
+  cp -r clients "$pkgdir/usr/share/mademind/"
+}

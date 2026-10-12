@@ -1,4 +1,4 @@
-.PHONY: help bootstrap test lint fmt build run dist clean
+.PHONY: help bootstrap test lint fmt build run dist clean distclean
 .DEFAULT_GOAL := help
 
 CARGO_TARGET_DIR ?= target
@@ -33,5 +33,14 @@ run: ## Run locally (./config.toml, index + models in ./.cache)
 dist: ## Build release archives into dist/ (see scripts/dist.sh)
 	TARGETS="$(TARGETS)" scripts/dist.sh
 
-clean: ## Clean build artifacts
+clean: ## Clean build artifacts (target/, dist/, makepkg output)
 	cargo clean
+	rm -rf dist
+	rm -rf packaging/arch/*/src packaging/arch/*/pkg packaging/arch/*/mademind packaging/arch/*/*.pkg.tar.*
+
+# Also the dist.sh docker cache and `make run`'s ./.cache (index + ~2 GB of
+# models, downloaded again on the next run).
+distclean: clean ## clean + docker build cache + ./.cache (index, models)
+	-docker volume rm mademind-dist-cache
+	-docker image rm mademind-dist-glibc
+	rm -rf .cache

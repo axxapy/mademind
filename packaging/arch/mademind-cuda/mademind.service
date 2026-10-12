@@ -1,0 +1,42 @@
+# systemd user unit: mademind as a per-user service.
+#
+#   systemctl --user enable --now mademind
+#   journalctl --user -u mademind -f
+#
+# Config: ~/.config/mademind/config.toml (start from
+# /usr/share/doc/mademind/config.example.toml). Index and models: ~/.cache/mademind.
+# Collections are read-only to the service; narrow what it sees further with a
+# drop-in (systemctl --user edit mademind), e.g. TemporaryFileSystem=%h plus
+# BindReadOnlyPaths= for each collection.
+
+[Unit]
+Description=mademind: notes search server for AI agents
+Documentation=https://github.com/axxapy/mademind
+After=network-online.target
+
+[Service]
+Type=exec
+Environment=MADEMIND_CONFIG=%E/mademind/config.toml
+Environment=MADEMIND_CACHE_DIR=%C/mademind
+ExecStart=/usr/bin/mademind serve
+Restart=on-failure
+RestartSec=10
+CacheDirectory=mademind
+
+# Sandbox. GPU builds need /dev/nvidia* or /dev/dri, so no PrivateDevices.
+NoNewPrivileges=yes
+PrivateUsers=self
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%C/mademind
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=default.target
