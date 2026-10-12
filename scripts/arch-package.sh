@@ -18,6 +18,7 @@ docker run --rm \
   -v "$PWD:/src:ro" -v "$out:/out" \
   -e COMMIT="$(git rev-parse HEAD)" -e CUDA_ARCHS="${CUDA_ARCHS:-89}" \
   archlinux:base-devel bash -euo pipefail -c '
+    # build deps only: --nodeps below skips the runtime nvidia-utils (driver)
     pacman -Syu --noconfirm --needed cuda gcc15 cmake clang git rust >/dev/null
     useradd -m builder
     # the recipe only, not leftovers of a local makepkg run (src/, pkg/, clone)
@@ -28,7 +29,7 @@ docker run --rm \
       git config --global --add safe.directory \"*\"
       cd ~/pkg
       _mademind_src=git+file:///src#commit=$COMMIT _cuda_archs=\"$CUDA_ARCHS\" \
-        PKGDEST=/out makepkg --noconfirm
+        PKGDEST=/out makepkg --noconfirm --nodeps
     "
   '
 ls -la "$out"/mademind-cuda-*.pkg.tar.zst

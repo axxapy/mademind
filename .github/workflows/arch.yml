@@ -1,0 +1,56 @@
+# Arch package (packaging/arch/mademind-cuda): builds it from the checked-out
+# commit in a clean archlinux container (scripts/arch-package.sh), so a
+# PKGBUILD, Cargo or toolchain change that breaks the CUDA build shows up here.
+# CI builds kernels for one GPU architecture (sm_89) to stay fast; the release
+# workflow builds the full set and attaches the package to the release.
+# Arch is rolling, so a red run without a repo change usually means a new
+# cuda/cccl/gcc broke the build (see the CUDAFLAGS workaround in the PKGBUILD).
+name: arch
+
+on:
+  pull_request:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - src/**
+      - packaging/arch/**
+      - scripts/arch-package.sh
+      - .github/workflows/arch.yml
+  push:
+    branches: [master]
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - src/**
+      - packaging/arch/**
+      - scripts/arch-package.sh
+      - .github/workflows/arch.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: mademind-cuda
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      # The CUDA toolkit alone is several GB in the container.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # makepkg clones the checkout
+      - name: Build package
+        env:
+          CUDA_ARCHS: "89"
+        run: scripts/arch-package.sh dist
+      - name: Inspect package
+        run: |
+          tar -tf dist/mademind-cuda-*.pkg.tar.zst | grep -E '^usr/(bin|lib/systemd)/'
+          tar -xOf dist/mademind-cuda-*.pkg.tar.zst .PKGINFO | grep -E '^(pkgver|depend|size) '

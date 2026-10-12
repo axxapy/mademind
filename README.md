@@ -117,6 +117,7 @@ cargo build --release              # needs cmake and a C/C++ compiler (llama.cpp
 cargo build --release --no-default-features   # external engine only, no llama.cpp
 make test lint                     # what CI runs
 make dist                          # Linux release archives (docker + zig)
+scripts/arch-package.sh            # Arch package (mademind-cuda) in an archlinux container
 ```
 
 Pushing a `vX.Y.Z` tag builds all platforms, publishes a GitHub release and pushes the images to Docker Hub. Then `scripts/bump-formula.sh X.Y.Z` points the Homebrew formula at the new release.

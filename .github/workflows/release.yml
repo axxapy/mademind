@@ -1,6 +1,6 @@
 # Release: push a tag vX.Y.Z (matching Cargo.toml's version) to
 #   - build every platform on its own runner and publish a GitHub Release with
-#     the archives and SHA256SUMS (no Windows arm64 build yet: llama.cpp needs
+#     the archives, the Arch package (mademind-cuda, x86_64) and SHA256SUMS (no Windows arm64 build yet: llama.cpp needs
 #     clang there; Windows on ARM runs the x86_64 build under emulation);
 #   - build the container images (native runners) and push them to Docker Hub
 #     as <DOCKERHUB_USERNAME>/mademind:
@@ -41,8 +41,18 @@ jobs:
           - { name: macos-x86_64, os: macos-15-intel, native: true }
           - { name: macos-arm64, os: macos-15, native: true }
           - { name: windows-x86_64, os: windows-2025, native: true }
+          # Arch package (scripts/arch-package.sh, in an archlinux container)
+          - { name: arch-cuda, os: ubuntu-24.04 }
     steps:
+      # The CUDA toolkit alone is several GB in the container.
+      - name: Free disk space
+        if: matrix.name == 'arch-cuda'
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
       - uses: actions/checkout@v5
+        with:
+          # makepkg clones the checkout
+          fetch-depth: ${{ matrix.name == 'arch-cuda' && 0 || 1 }}
 
       - name: Check tag matches Cargo.toml
         if: startsWith(github.ref, 'refs/tags/')
@@ -51,6 +61,11 @@ jobs:
           version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
           if [[ "${GITHUB_REF_NAME}" != "v${version}" ]]; then
             echo "::error::tag ${GITHUB_REF_NAME} does not match Cargo.toml version ${version}"
+            exit 1
+          fi
+          pkgver="$(sed -n 's/^pkgver=//p' packaging/arch/mademind-cuda/PKGBUILD)"
+          if [[ "${GITHUB_REF_NAME}" != "v${pkgver}" ]]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match PKGBUILD pkgver ${pkgver}"
             exit 1
           fi
 
@@ -80,6 +95,7 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.pkg.tar.zst
           if-no-files-found: error
 
   release:
@@ -116,6 +132,8 @@ jobs:
           \`\`\`
 
           Original qmd engine (linux/amd64): \`${img}:${v}-classic\`. Setup: see the [README](https://github.com/${GITHUB_REPOSITORY}#quick-start).
+
+          **Arch Linux, NVIDIA GPU**: \`sudo pacman -U mademind-cuda-${v}-1-x86_64.pkg.tar.zst\`, then \`systemctl --user enable --now mademind\` (config: \`~/.config/mademind/config.toml\`). Kernels for RTX 20xx/30xx/40xx/50xx; needs only the NVIDIA driver.
 
           **Binaries**: pick the archive for your platform below and check it against \`SHA256SUMS\`. Windows on ARM: use \`windows-x86_64\` (runs under emulation). Run the server with \`mademind serve -c config.toml\`; the same binary is a qmd-style client (\`mademind query "..."\`, \`mademind help\`).
           EOF

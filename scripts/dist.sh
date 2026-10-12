@@ -5,6 +5,7 @@
 #   scripts/dist.sh                                  # every platform below
 #   TARGETS="linux-x86_64-gnu linux-x86_64-musl" scripts/dist.sh
 #   BUILD=native TARGETS=macos-arm64 scripts/dist.sh # on the platform itself
+#   TARGETS=arch-cuda scripts/dist.sh                # Arch package (opt-in)
 #
 # How each platform builds:
 #   linux-*-gnu   in a Debian bookworm container (scripts/dist-glibc.Dockerfile):
@@ -16,6 +17,10 @@
 #                 BUILD=native: plain cargo on that OS (CI runners). Windows
 #                 uses MSVC, whose OpenMP needs no libgomp. Cross-building them
 #                 from Linux with zig fails (no macOS SDK; no MinGW libgomp).
+#   arch-cuda     not in the default set: the Arch package mademind-cuda
+#                 (scripts/arch-package.sh: archlinux container + CUDA toolkit,
+#                 slow), kernels for CUDA_ARCHS (default 75;86;89;120). Lands in
+#                 dist/ as mademind-cuda-<version>-<rel>-x86_64.pkg.tar.zst.
 #
 # Needs: bash 3.2+, rustup; docker (gnu); zig + cargo-zigbuild (musl);
 # zip or 7z (windows).
@@ -103,6 +108,10 @@ mkdir -p "$OUT"
 failed=""
 for name in $TARGETS; do
   echo "==> $name"
+  if [[ $name == arch-cuda ]]; then
+    CUDA_ARCHS="${CUDA_ARCHS:-75;86;89;120}" scripts/arch-package.sh "$OUT" || failed="$failed $name"
+    continue
+  fi
   if build "$name"; then
     package "$name"
   else
