@@ -62,7 +62,7 @@ Listens on `0.0.0.0:<port>`. Every request except `/healthz` and `/metrics` pass
 | `GET /file?path=<p>`     | mademind  | The file as `text/plain; charset=utf-8` (§4.2)                                |
 | `POST /query`, `/search` | engine    | Search (§4.1)                                                                 |
 | `GET /health`            | engine    | `{"status":"ok","uptime":<s>}`                                                |
-| `/mcp`                   | engine    | MCP Streamable HTTP (sessions). Tools: `query`, `get`, `multi_get`, `status`. |
+| `/mcp`                   | engine    | MCP Streamable HTTP (builtin: stateless, JSON responses; external: qmd's sessions). Tools: `query`, `get`, `multi_get`, `status`. |
 
 ### 4.1 Search
 

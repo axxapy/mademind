@@ -151,11 +151,16 @@ impl Builtin {
         let server = McpServer::new(self.server.clone(), self.instructions.clone());
         // Host validation is off: requests reach this router only through the
         // auth layer, and LAN clients send their own Host (rmcp's default
-        // allows loopback names only).
+        // allows loopback names only). Stateless: every tool is a plain
+        // request/response, and sessions only added an idle expiry (5 min in
+        // rmcp) that clients like the stdio proxy cannot recover from.
         let mcp = StreamableHttpService::new(
             move || Ok(server.clone()),
             Arc::new(LocalSessionManager::default()),
-            StreamableHttpServerConfig::default().disable_allowed_hosts(),
+            StreamableHttpServerConfig::default()
+                .with_stateful_mode(false)
+                .with_json_response(true)
+                .disable_allowed_hosts(),
         );
         let handle = self.server.handle();
         let query = move |body: Bytes| {

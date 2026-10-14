@@ -5,7 +5,8 @@
 // server (correctly, per MCP spec) answers 404 to /register. stdio
 // servers never get that treatment - so this thin wrapper speaks
 // MCP-over-stdio locally and forwards JSON-RPC to the mademind server's
-// Streamable-HTTP endpoint, carrying the Mcp-Session-Id. Requests are signed
+// Streamable-HTTP endpoint, carrying the Mcp-Session-Id if the server issues
+// one (the builtin engine is stateless; qmd is not). Requests are signed
 // when a key is configured (see lib/auth.ts), so it also works against a
 // mademind on another machine.
 //

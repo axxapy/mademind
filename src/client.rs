@@ -320,7 +320,8 @@ impl Client {
         Ok(v["results"].as_array().cloned().unwrap_or_default())
     }
 
-    /// Call one MCP tool in a short-lived session; returns the tool result.
+    /// Call one MCP tool; returns the tool result. The builtin engine is
+    /// stateless; the external one (qmd) hands out a session, used and closed.
     pub fn call_tool(&self, name: &str, args: Value) -> anyhow::Result<Value> {
         let accept = ("accept", "application/json, text/event-stream");
         let init = json!({"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {
@@ -333,15 +334,19 @@ impl Client {
         let sid = headers
             .get("mcp-session-id")
             .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| anyhow!("server sent no MCP session"))?
-            .to_string();
-        let session = ("mcp-session-id", sid.as_str());
+            .map(str::to_string);
+        let mut hdrs = vec![accept];
+        if let Some(sid) = &sid {
+            hdrs.push(("mcp-session-id", sid.as_str()));
+        }
         let note = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
-        self.request("POST", "/mcp", &note.to_string(), &[accept, session])?;
+        self.request("POST", "/mcp", &note.to_string(), &hdrs)?;
         let call = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
             "params": {"name": name, "arguments": args}});
-        let (r, _) = self.request("POST", "/mcp", &call.to_string(), &[accept, session])?;
-        let _ = self.request("DELETE", "/mcp", "", &[session]);
+        let (r, _) = self.request("POST", "/mcp", &call.to_string(), &hdrs)?;
+        if let Some(sid) = &sid {
+            let _ = self.request("DELETE", "/mcp", "", &[("mcp-session-id", sid.as_str())]);
+        }
         let msg = rpc_message(&r.body).ok_or_else(|| anyhow!("no MCP answer: {}", r.body))?;
         if let Some(e) = msg.get("error") {
             bail!("{}", e["message"].as_str().unwrap_or("MCP error"));
