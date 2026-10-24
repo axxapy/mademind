@@ -44,8 +44,7 @@ build() {
   # llama.cpp has it. Drop once rqmd-core moves past 0.1.146.
   export CUDAFLAGS="--pre-include cuda/iterator"
   export CARGO_TARGET_DIR=target
-  # rqmd-core/cuda rather than the `cuda` feature: v0.2.1 predates it.
-  cargo build --frozen --release --features rqmd-core/cuda
+  cargo build --frozen --release --features cuda
 }
 
 package() {
