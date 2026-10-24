@@ -6,7 +6,7 @@
 # driver's libcuda.so is needed (nvidia-utils), not the CUDA toolkit.
 
 pkgname=mademind-cuda
-pkgver=0.2.1
+pkgver=0.2.2
 pkgrel=1
 pkgdesc='Search server for markdown notes, for AI agents (BM25 + vectors + rerank); CUDA build'
 arch=(x86_64)
